@@ -5,8 +5,29 @@ import SessionButton from "@/components/SessionButton";
 import ToolBox from "@/components/ToolBox";
 import { wsClient } from "@/hooks/useWSClient";
 import { useSessionStore } from "@/store/useSessionstore";
+import { Metadata } from "next";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+
+
+export const metadata: Metadata = {
+  title: "SketchyDraw – Collaborative Whiteboarding made simple",
+  description: "Draw diagrams with a hand-drawn feel",
+  openGraph: {
+    title: "SketchyDraw Board",
+    description: "Open this collaborative board in SketchyDraw",
+    url: "https://sketchydraw.com",
+    siteName: "SketchyDraw",
+    images: [
+      {
+        url: "https://drive.google.com/file/d/1ItfmHUaKbcoSdeUfyI26L6n471Z6JYLk/view?usp=sharing",
+        width: 1200,
+        height: 630,
+      },
+    ],
+    type: "website",
+  },
+}
 
 const CanvasBoard = () => {
   const router = useRouter();
