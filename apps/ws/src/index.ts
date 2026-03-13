@@ -9,15 +9,21 @@ const wss = new WebSocketServer({ port: 8080 });
 
 interface User {
   userId: string;
+  name: string;
   ws: WebSocket;
   rooms: string[];
 }
 
 let users: User[] = [];
 
+type DecodedToken = {
+  userId: string;
+  name?: string;
+};
+
 function authUser(token: string) {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET) as DecodedToken | string;
 
     if (typeof decoded == "string") {
       console.error("Decoded token is a string, expected object");
@@ -28,10 +34,31 @@ function authUser(token: string) {
       return null;
     }
 
-    return decoded.userId;
+    return {
+      userId: decoded.userId,
+      name: decoded.name || "User",
+    };
   } catch (error) {
     return null;
   }
+}
+
+function broadcastParticipants(roomId: string) {
+  const participants = users
+    .filter((user) => user.rooms.includes(roomId))
+    .map((user) => ({ userId: user.userId, name: user.name }));
+
+  users.forEach((user) => {
+    if (user.rooms.includes(roomId) && user.ws.readyState === WebSocket.OPEN) {
+      user.ws.send(
+        JSON.stringify({
+          type: "participants-update",
+          roomId,
+          participants,
+        })
+      );
+    }
+  });
 }
 
 wss.on("connection", (ws, request) => {
@@ -48,16 +75,21 @@ wss.on("connection", (ws, request) => {
     return;
   }
 
-  const userId = authUser(token);
-  if (!userId) {
+  const authedUser = authUser(token);
+  if (!authedUser) {
     ws.close();
     return;
   }
 
-  const currentUser: User = { userId, ws, rooms: [] };
+  const currentUser: User = {
+    userId: authedUser.userId,
+    name: authedUser.name,
+    ws,
+    rooms: [],
+  };
   users.push(currentUser);
 
-  console.log(`User connected: ${userId}`);
+  // console.log(`User connected: ${authedUser.userId}`);
 
   ws.send(JSON.stringify({ message: "Connected to WebSocket server." }));
 
@@ -84,7 +116,11 @@ wss.on("connection", (ws, request) => {
         return;
       }
 
-      currentUser.rooms.push(roomId);
+      if (!currentUser.rooms.includes(roomId)) {
+        currentUser.rooms.push(roomId);
+      }
+
+      broadcastParticipants(roomId);
 
       // Send existing shapes
       const existingShapes = await prisma.shape.findMany({ where: { roomId } });
@@ -117,13 +153,14 @@ wss.on("connection", (ws, request) => {
       }
 
       currentUser.rooms = currentUser.rooms.filter((id) => id !== room.id);
+      broadcastParticipants(room.id);
     }
 
     // Chat (i.e., Shape Message)
     if (parsedData.type === "chat") {
       const { roomId, message } = parsedData;
       const shapeId = message.id;
-      console.log(message);
+      // console.log(message);
 
       try {
         if (message.type === "deleted") {
@@ -150,7 +187,7 @@ wss.on("connection", (ws, request) => {
               data: {
                 roomId,
                 shapeId,
-                userId,
+                userId: currentUser.userId,
                 message: JSON.stringify(message),
               },
             });
@@ -181,9 +218,13 @@ wss.on("connection", (ws, request) => {
   ws.on("close", () => {
     const user = users.find((u) => u.ws === ws);
     if (user) {
-      console.log(`User disconnected: ${user.userId}`);
+      // console.log(`User disconnected: ${user.userId}`);
+      const roomsToUpdate = [...user.rooms];
+      users = users.filter((u) => u.ws !== ws);
+      roomsToUpdate.forEach((roomId) => broadcastParticipants(roomId));
+      return;
     }
-    // Then remove by filter
+
     users = users.filter((u) => u.ws !== ws);
   });
 });

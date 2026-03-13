@@ -23,6 +23,8 @@ const useDrawShape = (
   },
   inPlaceEditingShapeId?: string
 ) => {
+  type CanvasInputEvent = MouseEvent | PointerEvent;
+
   const isDrawing = useRef(false);
   const erasedShapeIds = useRef<Set<string>>(new Set());
   const fadedShapeIds = useRef<Set<string>>(new Set());
@@ -123,7 +125,7 @@ const useDrawShape = (
     updateShape,
   ]);
 
-  const getMousePos = (e: MouseEvent): Point => {
+  const getMousePos = (e: CanvasInputEvent): Point => {
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas!.getBoundingClientRect();
 
@@ -201,7 +203,7 @@ const useDrawShape = (
     return isInside;
   };
 
-  const onMouseDown = (e: MouseEvent) => {
+  const onMouseDown = (e: CanvasInputEvent) => {
     if (currentTool === "drag") return;
     const mousePos = getMousePos(e);
 
@@ -335,7 +337,7 @@ const useDrawShape = (
     startPoint.current = mousePos;
   };
 
-  const onMouseUp = (e: MouseEvent) => {
+  const onMouseUp = (e: CanvasInputEvent) => {
     if (
       !isDrawing.current ||
       !startPoint.current ||
@@ -459,7 +461,7 @@ const useDrawShape = (
     startPoint.current = null;
   };
 
-  const onMouseMove = (e: MouseEvent) => {
+  const onMouseMove = (e: CanvasInputEvent) => {
     const currentPos = getMousePos(e);
 
     if (

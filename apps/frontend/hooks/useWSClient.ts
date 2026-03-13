@@ -13,6 +13,7 @@ const connect = (
     onOpen?: () => void;
     onError?: (err: Event) => void;
     onClose?: () => void;
+    onParticipantsUpdate?: (participants: Array<{ userId: string; name: string }>) => void;
   }
 ): Promise<void> => {
   return new Promise((resolve, reject) => {
@@ -34,6 +35,11 @@ const connect = (
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
+      if (data.type === "participants-update") {
+        callbacks?.onParticipantsUpdate?.(data.participants || []);
+        return;
+      }
+
       // console.log("shape received");
       if (data.type === "chat") {
         const { roomId, message: shape } = data;

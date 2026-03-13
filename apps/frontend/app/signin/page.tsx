@@ -60,7 +60,7 @@ const Signup = () => {
               placeholder="Enter Your Password"
               handleChange={(e) => setPassword(e.target.value)}
             />
-            <InputButton buttonText="Create Account" onSubmit={handleSubmit} />
+            <InputButton buttonText="Log In" onSubmit={handleSubmit} />
           </div>
         </div>
       </div>

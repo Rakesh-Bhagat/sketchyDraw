@@ -29,7 +29,7 @@ app.use(
   })
 );
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  // console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
   next();
 });
 
@@ -197,7 +197,7 @@ app.post(
   async (req: Request, res: Response): Promise<any> => {
     try {
       const { roomId } = req.params;
-      console.log("Saving shapes for room:", roomId);
+      // console.log("Saving shapes for room:", roomId);
       const { shapes } = req.body;
       const userId = req.userId;
       if (!roomId) {
@@ -245,7 +245,7 @@ app.get(
         messages,
       });
     } catch (e) {
-      console.log(e);
+      // console.log(e);
       res.json({
         messages: [],
       });
