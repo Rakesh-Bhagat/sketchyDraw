@@ -105,7 +105,6 @@ wss.on("connection", (ws, request) => {
       return;
     }
 
-    // Join Room
     if (parsedData.type === "join-room") {
       const roomId = parsedData.roomId;
       const room = await prisma.room.findUnique({ where: { id: roomId } });
@@ -122,7 +121,6 @@ wss.on("connection", (ws, request) => {
 
       broadcastParticipants(roomId);
 
-      // Send existing shapes
       const existingShapes = await prisma.shape.findMany({ where: { roomId } });
 
       existingShapes.forEach((shape: any) => {
@@ -141,7 +139,6 @@ wss.on("connection", (ws, request) => {
       });
     }
 
-    // Leave Room
     if (parsedData.type === "leave-room") {
       const room = await prisma.room.findUnique({
         where: { name: parsedData.name },
@@ -156,7 +153,6 @@ wss.on("connection", (ws, request) => {
       broadcastParticipants(room.id);
     }
 
-    // Chat (i.e., Shape Message)
     if (parsedData.type === "chat") {
       const { roomId, message } = parsedData;
       const shapeId = message.id;
@@ -218,7 +214,6 @@ wss.on("connection", (ws, request) => {
   ws.on("close", () => {
     const user = users.find((u) => u.ws === ws);
     if (user) {
-      // console.log(`User disconnected: ${user.userId}`);
       const roomsToUpdate = [...user.rooms];
       users = users.filter((u) => u.ws !== ws);
       roomsToUpdate.forEach((roomId) => broadcastParticipants(roomId));
