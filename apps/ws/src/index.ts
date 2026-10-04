@@ -140,8 +140,9 @@ wss.on("connection", (ws, request) => {
     }
 
     if (parsedData.type === "leave-room") {
+      // Room names are only unique per creator, so rooms are looked up by id.
       const room = await prisma.room.findUnique({
-        where: { name: parsedData.name },
+        where: { id: parsedData.roomId },
       });
 
       if (!room) {

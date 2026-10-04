@@ -6,11 +6,14 @@ import { useSessionStore } from "@/store/useSessionstore";
 import { useShapeStore } from "@/store/useShapeStore";
 import axios from "axios";
 import { useRouter } from "next/navigation";
+import { Share2 } from "lucide-react";
+import SessionDialog from "./SessionDialog";
 
 const SessionButton = ({ roomId }: { roomId: string }) => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isClient, setIsClient] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const isConnected = useSessionStore((state) => state.isSessionStarted);
   const setIsConnected = useSessionStore((state) => state.setSessionStarted);
@@ -22,26 +25,39 @@ const SessionButton = ({ roomId }: { roomId: string }) => {
     setIsClient(true);
   }, []);
 
-  const handleClick = async () => {
-    const token = localStorage.getItem("token") || "";
-    if(!token && isStandalone) {
-      setError("Please sign in to start a collaboration session.");
-      router.push("/signin")
-      return;
-    }
-    
-    setLoading(true);
+  const closeDialog = () => {
+    setDialogOpen(false);
+    setError(null);
+  };
 
-    if (!isConnected) {
-      if (isStandalone) {
+  const startSession = async (roomName: string) => {
+    const token = localStorage.getItem("token") || "";
+    setLoading(true);
+    setError(null);
+
+    try {
+      const standaloneShapes = getShapes("standalone");
+      const serverUrl = process.env.NEXT_PUBLIC_HTTP_URL!;
+      const response = await axios.post(
+        `${serverUrl}/room`,
+        { name: roomName },
+        {
+          headers: {
+            Authorization: token,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const newroomId = response.data.id;
+
+      setShapes(newroomId, standaloneShapes);
+      if (standaloneShapes.length > 0) {
+        // Save shapes to the new room
         try {
-          const standaloneShapes = getShapes("standalone");
-          const serverUrl = process.env.NEXT_PUBLIC_HTTP_URL!;
-          const response = await axios.post(
-            `${serverUrl}/room`,
-            {
-              name: `Canvas Session ${new Date().toLocaleString()}`,
-            },
+          await axios.post(
+            `${serverUrl}/bulkShapes/${newroomId}`,
+            { shapes: standaloneShapes },
             {
               headers: {
                 Authorization: token,
@@ -49,86 +65,94 @@ const SessionButton = ({ roomId }: { roomId: string }) => {
               },
             }
           );
-
-          const newroomId = response.data.id;
-
-          setShapes(newroomId, standaloneShapes);
-          if (standaloneShapes.length > 0) {
-            // Save shapes to the new room
-            try {
-              await axios.post(
-                `${serverUrl}/bulkShapes/${newroomId}`,
-                {
-                  shapes: standaloneShapes,
-                },
-                {
-                  headers: {
-                    Authorization: token,
-                    "Content-Type": "application/json",
-                  },
-                }
-              );
-              // console.log("Shapes saved successfully:", shapesResponse.data);
-            } catch (shapesError) {
-              console.error("Failed to save shapes:", shapesError);
-            }
-          }
-
-          router.push(`/room/${newroomId}`);
-          // console.log("Standalone session created with roomId:", newroomId);
-          setIsConnected(false);
-          setError(null);
-          // console.log("Connected, ready to draw or send shapes");
-        } catch (error) {
-          console.error("Failed to create standalone session", error);
-        }
-      } else {
-        try {
-          await wsClient.connect(roomId, token, {
-            onOpen: () => {
-              setIsConnected(true);
-              setError(null);
-              // console.log("Connected, ready to draw or send shapes");
-            },
-            onError: () => {
-              setError("Failed to connect to session.");
-            },
-            onClose: () => {
-              setIsConnected(false);
-              console.warn("Disconnected from session.");
-            },
-          });
-        } catch (err) {
-          console.error("Connect failed", err);
+        } catch (shapesError) {
+          console.error("Failed to save shapes:", shapesError);
         }
       }
-    } else {
-      if (!isStandalone) {
-        const currentShapes = getShapes(roomId);
-        setShapes("standalone", currentShapes);
-        wsClient.disconnect();
-        setIsConnected(false);
-        setError(null);
-        router.push("/canvas");
+
+      setDialogOpen(false);
+      router.push(`/room/${newroomId}`);
+      setIsConnected(false);
+    } catch (err) {
+      console.error("Failed to create standalone session", err);
+      if (axios.isAxiosError(err) && err.response?.status === 409) {
+        setError("A room with this name already exists. Try another name.");
+      } else if (axios.isAxiosError(err) && err.response?.status === 401) {
+        // Stale token (user no longer exists): drop it so the user signs in again.
+        localStorage.removeItem("token");
+        setError("Your login is no longer valid. Please sign in again.");
+        setTimeout(() => router.push("/signin"), 1500);
       } else {
-        wsClient.disconnect();
-        setIsConnected(false);
-        setError(null);
+        setError("Couldn't start the session. Please try again.");
       }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
-  const getButtonText = () => {
-    if (loading) return "Loading...";
-    if(isStandalone){
-      if(!isClient) return "Loading...";
-      const token = localStorage.getItem("token");
-      return token ? "Start Session" : "Sign In to Collaborate";
-    }
-    return isConnected ? "Stop Session" : "Start Session";
-    };
 
-    if (!isClient) {
+  const stopSession = () => {
+    const currentShapes = getShapes(roomId);
+    setShapes("standalone", currentShapes);
+    wsClient.disconnect();
+    setIsConnected(false);
+    setError(null);
+    setDialogOpen(false);
+    router.push("/canvas");
+  };
+
+  const reconnect = async () => {
+    const token = localStorage.getItem("token") || "";
+    setLoading(true);
+    try {
+      await wsClient.connect(roomId, token, {
+        onOpen: () => {
+          setIsConnected(true);
+          setError(null);
+        },
+        onError: () => {
+          setError("Failed to connect to session.");
+        },
+        onClose: () => {
+          setIsConnected(false);
+          console.warn("Disconnected from session.");
+        },
+      });
+    } catch (err) {
+      console.error("Connect failed", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClick = () => {
+    if (isStandalone) {
+      if (!localStorage.getItem("token")) {
+        setError("Please sign in to start a collaboration session.");
+        router.push("/signin");
+        return;
+      }
+      setDialogOpen(true);
+      return;
+    }
+
+    // In a room: connected -> share dialog, disconnected -> reconnect.
+    if (isConnected) {
+      setDialogOpen(true);
+    } else {
+      reconnect();
+    }
+  };
+
+  const getButtonText = () => {
+    if (loading && !dialogOpen) return "Loading...";
+    if (isStandalone) {
+      if (!isClient) return "Loading...";
+      return localStorage.getItem("token") ? "Start Session" : "Sign In to Collaborate";
+    }
+    return isConnected ? "Share" : "Start Session";
+  };
+
+  if (!isClient) {
     return (
       <div>
         <button
@@ -141,15 +165,35 @@ const SessionButton = ({ roomId }: { roomId: string }) => {
     );
   }
 
+  const showShareIcon = !isStandalone && isConnected;
+
   return (
     <div>
       <button
         onClick={handleClick}
-        className="p-2 bg-[hsl(var(--icon-selected))] text-white rounded-md disabled:opacity-50"
+        className="flex items-center gap-2 p-2 bg-[hsl(var(--icon-selected))] text-white rounded-md disabled:opacity-50"
       >
+        {showShareIcon && <Share2 size={16} />}
         {getButtonText()}
       </button>
-      {error && <p className="text-red-500 mt-2">{error}</p>}
+      {error && !dialogOpen && <p className="text-red-500 mt-2">{error}</p>}
+      {dialogOpen && isStandalone && (
+        <SessionDialog
+          mode="start"
+          loading={loading}
+          error={error}
+          onStart={startSession}
+          onClose={closeDialog}
+        />
+      )}
+      {dialogOpen && !isStandalone && (
+        <SessionDialog
+          mode="share"
+          roomId={roomId}
+          onStop={stopSession}
+          onClose={closeDialog}
+        />
+      )}
     </div>
   );
 };

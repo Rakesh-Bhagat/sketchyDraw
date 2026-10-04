@@ -135,6 +135,17 @@ app.post(
       });
     } catch (error) {
       console.log(error)
+      if ((error as { code?: string })?.code === "P2002") {
+        return res
+          .status(409)
+          .json({ message: "A room with this name already exists" });
+      }
+      if ((error as { code?: string })?.code === "P2003") {
+        // Token is valid but its user no longer exists (e.g. database was reset).
+        return res
+          .status(401)
+          .json({ message: "User not found. Please sign in again." });
+      }
       return res.status(400).json({ message: "Something went wrong!" });
     }
   }

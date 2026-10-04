@@ -30,6 +30,7 @@ const Dashboard = () => {
   const [roomName, setRoomName] = useState("");
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
+  const [roomsLoading, setRoomsLoading] = useState(true);
   const [user, setUser] = useState<string | null>(null);
   const serverUrl = process.env.NEXT_PUBLIC_HTTP_URL
 
@@ -50,6 +51,8 @@ const Dashboard = () => {
         );
       } catch (error) {
         console.log(error);
+      } finally {
+        setRoomsLoading(false);
       }
     }
     getRooms();
@@ -230,7 +233,25 @@ const Dashboard = () => {
             )}
           </div>
         </div>
-        {rooms.length === 0 ? (
+        {roomsLoading ? (
+          <div
+            className="grid sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6 sm:gap-3"
+            role="status"
+            aria-label="Loading rooms"
+          >
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="animate-pulse rounded-lg bg-gray-800 border-2 border-dashed w-full border-gray-600 p-5 min-w-xs"
+              >
+                <div className="h-6 w-2/3 rounded bg-gray-700 mb-4" />
+                <div className="h-4 w-full rounded bg-gray-700 mb-3" />
+                <div className="h-4 w-1/2 rounded bg-gray-700 mb-6" />
+                <div className="h-10 w-full rounded-md bg-gray-700" />
+              </div>
+            ))}
+          </div>
+        ) : rooms.length === 0 ? (
           <div className="text-center py-16">
             <h3 className="text-xl font-semibold text-gray-300 mb-2">
               No rooms yet
