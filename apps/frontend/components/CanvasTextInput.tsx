@@ -9,6 +9,7 @@ interface CanvasTextInputProps {
   offset: { x: number; y: number };
   onComplete: (text: string) => void;
   onCancel: () => void;
+  onTextChange?: (text: string) => void;
   initialText?: string;
   style?: {
     fontSize?: number;
@@ -24,6 +25,7 @@ export const CanvasTextInput = ({
   offset,
   onComplete,
   onCancel,
+  onTextChange,
   initialText = "",
   style = {},
 }: CanvasTextInputProps) => {
@@ -126,6 +128,7 @@ export const CanvasTextInput = ({
   const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
     const newText = e.currentTarget.textContent || "";
     setText(newText);
+    onTextChange?.(newText);
   };
 
   const handleClick = () => {

@@ -7,6 +7,7 @@ import { RoughCanvas } from "roughjs/bin/canvas";
 import { useShapeStore } from "@/store/useShapeStore";
 import { wsClient } from "./useWSClient";
 import { useStyleStore } from "@/store/useStyleStore";
+import { usePreviewStore } from "@/store/usePreviewStore";
 import { generateUuid } from '@/utils/uuid';
 const useDrawShape = (
   canvas: HTMLCanvasElement | null,
@@ -43,6 +44,7 @@ const useDrawShape = (
 
   const { selectedShapeId, setSelectedShapeId, updateShape } = useShapeStore();
   const style = useStyleStore.getState().style;
+  const remotePreviews = usePreviewStore((state) => state.previews);
 
   useEffect(() => {
     if (canvas && !roughCanvasRef.current) {
@@ -62,10 +64,15 @@ const useDrawShape = (
       clearCanvas(ctx, canvas.width, canvas.height);
       ctx.setTransform(zoom, 0, 0, zoom, offset.x, offset.y);
 
+      const previewList = Object.values(remotePreviews);
+      const previewIds = new Set(previewList.map((p) => p.id));
+
       shapes.forEach((shape) => {
         if (shape.type === "deleted") return;
         // Skip drawing the shape that's currently being edited in-place
         if (inPlaceEditingShapeId && shape.id === inPlaceEditingShapeId) return;
+        // Someone else is editing this shape's text; their preview replaces it
+        if (previewIds.has(shape.id)) return;
         drawShape(
           roughCanvasRef.current!,
           shape,
@@ -74,13 +81,17 @@ const useDrawShape = (
           ctx,
         );
       });
+
+      previewList.forEach((preview) => {
+        drawShape(roughCanvasRef.current!, preview, false, zoom, ctx);
+      });
     };
 
     const frameId = requestAnimationFrame(drawFrame);
     return () => {
       cancelAnimationFrame(frameId);
     };
-  }, [shapes, canvas, offset, zoom, selectedShapeId, inPlaceEditingShapeId]);
+  }, [shapes, canvas, offset, zoom, selectedShapeId, inPlaceEditingShapeId, remotePreviews]);
 
   useEffect(() => {
     if (!selectedShapeId || !generatorRef.current) return;
@@ -374,6 +385,9 @@ const useDrawShape = (
       return;
     }
 
+    // The finished shape is sent via onShapeDrawn; drop our in-progress preview.
+    if (isSessionStarted) wsClient.sendPreview(roomId, null);
+
     if (currentTool === "draw" && currentPoints.current.length > 1) {
       const points = [...currentPoints.current];
       const xs = points.map((p) => p.x);
@@ -483,6 +497,9 @@ const useDrawShape = (
 
     shapes.forEach((shape) => {
       drawShape(roughCanvas, shape, shape.id === selectedShapeId, zoom, ctx);
+    });
+    Object.values(usePreviewStore.getState().previews).forEach((preview) => {
+      drawShape(roughCanvas, preview, false, zoom, ctx);
     });
 
     if (resizeHandle.current && selectedShapeId) {
@@ -684,6 +701,7 @@ const useDrawShape = (
           ) ?? undefined,
       };
       drawShape(roughCanvas, previewShape, false, zoom, ctx);
+      if (isSessionStarted) wsClient.sendPreview(roomId, previewShape);
       return;
     }
 
@@ -770,6 +788,7 @@ const useDrawShape = (
     };
 
     drawShape(roughCanvas, previewShape, false, zoom, ctx);
+    if (isSessionStarted) wsClient.sendPreview(roomId, previewShape);
   };
   return { onMouseDown, onMouseMove, onMouseUp };
 };

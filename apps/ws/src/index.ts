@@ -153,6 +153,61 @@ wss.on("connection", (ws, request) => {
       broadcastParticipants(room.id);
     }
 
+    if (parsedData.type === "cursor") {
+      const { roomId, x, y } = parsedData;
+      if (
+        !currentUser.rooms.includes(roomId) ||
+        typeof x !== "number" ||
+        typeof y !== "number"
+      ) {
+        return;
+      }
+
+      users.forEach((user) => {
+        if (
+          user.rooms.includes(roomId) &&
+          user.ws.readyState === WebSocket.OPEN &&
+          user.ws !== ws
+        ) {
+          user.ws.send(
+            JSON.stringify({
+              type: "cursor",
+              roomId,
+              userId: currentUser.userId,
+              name: currentUser.name,
+              x,
+              y,
+            })
+          );
+        }
+      });
+      return;
+    }
+
+    // In-progress shapes/text are relayed only; never persisted.
+    if (parsedData.type === "preview") {
+      const { roomId, shape } = parsedData;
+      if (!currentUser.rooms.includes(roomId)) return;
+
+      users.forEach((user) => {
+        if (
+          user.rooms.includes(roomId) &&
+          user.ws.readyState === WebSocket.OPEN &&
+          user.ws !== ws
+        ) {
+          user.ws.send(
+            JSON.stringify({
+              type: "preview",
+              roomId,
+              userId: currentUser.userId,
+              shape: shape ?? null,
+            })
+          );
+        }
+      });
+      return;
+    }
+
     if (parsedData.type === "chat") {
       const { roomId, message } = parsedData;
       const shapeId = message.id;

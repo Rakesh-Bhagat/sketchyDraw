@@ -5,6 +5,7 @@ import useDrawShape from "@/hooks/useDrawShape";
 import { wsClient } from "@/hooks/useWSClient";
 import { useSessionStore } from "@/store/useSessionstore";
 import { useShapeStore } from "@/store/useShapeStore";
+import { useCursorStore } from "@/store/useCursorStore";
 import { useToolStore } from "@/store/useToolStore";
 import { Point, Shape } from "@/types/shape";
 import { Minus, Plus } from "lucide-react";
@@ -13,7 +14,8 @@ import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import StyleSidebar from "./StyleSidebar";
 import { useStyleStore } from "@/store/useStyleStore";
 import { useCanvasCursor } from "@/hooks/useCanvasCursor";
-import { calculateTextDimensions } from "@/utils/draw";
+import { calculateTextDimensions, generateDrawable } from "@/utils/draw";
+import rough from "roughjs/bin/rough";
 import { InPlaceTextEditor } from "./InPlaceTextEditor";
 import { CanvasTextInput } from "./CanvasTextInput";
 import MenuDropdown from "./MenuDropdown";
@@ -23,7 +25,15 @@ const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 50;
 const ZOOM_STEP_FACTOR = 1.1;
 
-const clampZoom = (value: number) => Math.min(Math.max(value, MIN_ZOOM), MAX_ZOOM);
+const cursorColor = (userId: string) => {
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = (hash * 31 + userId.charCodeAt(i)) | 0;
+  }
+  return `hsl(${Math.abs(hash) % 360}, 70%, 45%)`;
+};
+
+const clampZoom =(value: number) => Math.min(Math.max(value, MIN_ZOOM), MAX_ZOOM);
 
 const Canvas = () => {
   const params = useParams();
@@ -301,6 +311,138 @@ const Canvas = () => {
     };
   }, [handleWheel]);
 
+  const remoteCursors = useCursorStore((state) => state.cursors);
+  const viewRef = useRef({ offset, zoom });
+  viewRef.current = { offset, zoom };
+
+  // Broadcast our pointer position (in world coords) to the room, ~30fps max.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || isStandalone || !isSessionStarted) return;
+
+    let lastSent = 0;
+    const handlePointerMove = (e: PointerEvent) => {
+      const now = performance.now();
+      if (now - lastSent < 33) return;
+      lastSent = now;
+
+      const rect = canvas.getBoundingClientRect();
+      const { offset: o, zoom: z } = viewRef.current;
+      wsClient.sendCursor(
+        roomId,
+        (e.clientX - rect.left - o.x) / z,
+        (e.clientY - rect.top - o.y) / z
+      );
+    };
+
+    canvas.addEventListener("pointermove", handlePointerMove);
+    return () => canvas.removeEventListener("pointermove", handlePointerMove);
+  }, [isStandalone, isSessionStarted, roomId, isClient]);
+
+  // Show what we're typing to other participants while the editor is open.
+  const sendTextPreview = (text: string) => {
+    if (!isSessionStarted || isStandalone) return;
+    const ctx = canvasRef.current?.getContext("2d");
+    if (!ctx) return;
+
+    let base: Shape | undefined;
+    if (inPlaceEditingShape) {
+      base = inPlaceEditingShape;
+    } else if (textInput?.id) {
+      base = shapes.find((s) => s.id === textInput.id);
+    }
+
+    const start = base?.start ?? { x: textInput!.x, y: textInput!.y };
+    const textStyle = base?.style ?? {
+      ...style,
+      fontSize: style.fontSize || 16,
+      fontFamily: style.fontFamily || "Arial",
+      textAlign: style.textAlign || "left",
+    };
+    const { width, height } = calculateTextDimensions(text, textStyle, zoom, ctx);
+
+    wsClient.sendPreview(
+      roomId,
+      {
+        // Reusing the original id lets other clients hide the old text while we edit.
+        id: base?.id ?? "temp-text-preview",
+        type: "text",
+        start,
+        end: { x: start.x + width, y: start.y + height },
+        width,
+        height,
+        text,
+        style: textStyle,
+      },
+      true
+    );
+  };
+
+  // Clear our text preview once both editors are closed (completed or cancelled).
+  useEffect(() => {
+    if (!textInput && !inPlaceEditingShape && isSessionStarted && !isStandalone) {
+      wsClient.sendPreview(roomId, null);
+    }
+  }, [textInput, inPlaceEditingShape, isSessionStarted, isStandalone, roomId]);
+
+  const copiedShape = useRef<Shape | null>(null);
+  const pasteCount = useRef(0);
+
+  useEffect(() => {
+    const PASTE_OFFSET = 20;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key !== "c" && key !== "v") return;
+
+      const target = e.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT")
+      ) {
+        return;
+      }
+      if (textInput || inPlaceEditingShape) return;
+
+      if (key === "c") {
+        const selected = shapes.find((s) => s.id === selectedShapeId);
+        if (!selected || selected.type === "deleted") return;
+        e.preventDefault();
+        copiedShape.current = selected;
+        pasteCount.current = 0;
+        return;
+      }
+
+      const source = copiedShape.current;
+      if (!source) return;
+      e.preventDefault();
+
+      pasteCount.current += 1;
+      const delta = PASTE_OFFSET * pasteCount.current;
+      const moved: Shape = {
+        ...source,
+        id: generateUuid(),
+        start: { x: source.start.x + delta, y: source.start.y + delta },
+        end: { x: source.end.x + delta, y: source.end.y + delta },
+        points: source.points?.map((p) => ({ x: p.x + delta, y: p.y + delta })),
+        style: source.style ? { ...source.style } : undefined,
+      };
+      const generator = rough.generator();
+      const drawable = generateDrawable(generator, moved, zoom);
+      moved.drawable = drawable ?? undefined;
+
+      handleShapeDrawn(moved);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shapes, selectedShapeId, textInput, inPlaceEditingShape, zoom, roomId, isSessionStarted, isClient]);
+
   useCanvasCursor({
     canvas: canvasRef.current,
     tool: currentTool,
@@ -412,6 +554,31 @@ const Canvas = () => {
         className="h-full w-full touch-none"
         style={{ backgroundColor: canvasBg, touchAction: "none" }}
       />
+      {!isStandalone &&
+        Object.values(remoteCursors).map((cursor) => {
+          const color = cursorColor(cursor.userId);
+          return (
+            <div
+              key={cursor.userId}
+              className="pointer-events-none absolute left-0 top-0 z-40 transition-transform duration-75 ease-linear"
+              style={{
+                transform: `translate(${cursor.x * zoom + offset.x}px, ${
+                  cursor.y * zoom + offset.y
+                }px)`,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill={color} stroke="white" strokeWidth="1.5">
+                <path d="M3 2l7.5 19 2.5-8 8-2.5L3 2z" />
+              </svg>
+              <span
+                className="ml-3 -mt-1 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium text-white"
+                style={{ backgroundColor: color }}
+              >
+                {cursor.name}
+              </span>
+            </div>
+          );
+        })}
       <div className="absolute top-4 left-4 z-50">
         <MenuDropdown />
       </div>
@@ -456,6 +623,7 @@ const Canvas = () => {
           offset={offset}
           onComplete={handleTextComplete}
           onCancel={handleTextCancel}
+          onTextChange={sendTextPreview}
           initialText={
             textInput.id
               ? shapes.find((shape) => shape.id === textInput.id)?.text || ""
@@ -475,6 +643,7 @@ const Canvas = () => {
           offset={offset}
           onComplete={handleInPlaceTextComplete}
           onCancel={handleInPlaceTextCancel}
+          onTextChange={sendTextPreview}
         />
       )}
       

@@ -9,6 +9,7 @@ interface InPlaceTextEditorProps {
   offset: { x: number; y: number };
   onComplete: (text: string) => void;
   onCancel: () => void;
+  onTextChange?: (text: string) => void;
 }
 
 export const InPlaceTextEditor = ({
@@ -17,6 +18,7 @@ export const InPlaceTextEditor = ({
   offset,
   onComplete,
   onCancel,
+  onTextChange,
 }: InPlaceTextEditorProps) => {
   const [text, setText] = useState(shape.text || "");
   const [isReady, setIsReady] = useState(false);
@@ -111,6 +113,7 @@ export const InPlaceTextEditor = ({
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
     setText(newText);
+    onTextChange?.(newText);
     
     // Auto-resize textarea height only
     const textarea = e.target;
