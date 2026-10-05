@@ -1,8 +1,9 @@
 "use client";
+import AuthShell from "@/components/AuthShell";
 import InputBox from "@/components/InputBox";
 import InputButton from "@/components/InputButton";
+import { parseAuthError } from "@/utils/authError";
 import axios from "axios";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -12,86 +13,84 @@ const Signup = () => {
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const local: Record<string, string> = {};
+    if (name.trim().length < 3) local.name = "Name must be at least 3 characters";
+    if (username.trim().length < 4 || username.trim().length > 30)
+      local.username = "Username must be 4-30 characters";
+    if (password.length < 6) local.password = "Password must be at least 6 characters";
+    setFields(local);
+    setError("");
+    if (Object.keys(local).length) return;
+
+    setLoading(true);
     try {
       const serverUrl = process.env.NEXT_PUBLIC_HTTP_URL;
-      const response = await axios.post(
+      await axios.post(
         `${serverUrl}/signup`,
-        {
-          name,
-          username,
-          password,
-        },
-        {
-          withCredentials: true,
-        }
+        { name: name.trim(), username: username.trim(), password },
+        { withCredentials: true }
       );
-
-      if (response.data) {
-        router.push("/signin");
-      }
-    } catch (error) {
-      console.log("signup failure: " + error);
+      router.push("/signin");
+    } catch (err) {
+      const parsed = parseAuthError(err, "signup");
+      setError(parsed.message);
+      setFields(parsed.fields);
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex justify-center items-center bg-neutral-300 px-4">
-      <div className="w-full max-w-5xl bg-[hsl(var(--auth-background))] rounded-3xl grid grid-cols-1 md:grid-cols-2 overflow-hidden shadow-lg">
-
-        {/* Image Section */}
-        <div className="hidden md:block relative">
-          <Image
-            src="/signup.jpg"
-            alt="signup-image"
-            fill
-            className="object-cover"
-          />
+    <AuthShell
+      title="Create your account"
+      subtitle={
+        <>
+          Already have one?{" "}
+          <Link href="/signin" className="text-white underline underline-offset-4">
+            Log in
+          </Link>
+        </>
+      }
+      error={error}
+    >
+      <form onSubmit={handleSubmit} noValidate className="space-y-4">
+        <InputBox
+          label="Name"
+          type="text"
+          placeholder="Ada Lovelace"
+          autoComplete="name"
+          value={name}
+          error={fields.name}
+          handleChange={(e) => setName(e.target.value)}
+        />
+        <InputBox
+          label="Username"
+          type="text"
+          placeholder="ada"
+          autoComplete="username"
+          value={username}
+          error={fields.username}
+          handleChange={(e) => setUsername(e.target.value)}
+        />
+        <InputBox
+          label="Password"
+          type="password"
+          placeholder="At least 6 characters"
+          autoComplete="new-password"
+          value={password}
+          error={fields.password}
+          handleChange={(e) => setPassword(e.target.value)}
+        />
+        <div className="pt-2">
+          <InputButton buttonText="Create account" loading={loading} />
         </div>
-
-        {/* Form Section */}
-        <div className="px-6 sm:px-10 md:px-12 py-10 sm:py-14 flex flex-col justify-center">
-          <div className="flex flex-col items-center text-center">
-            <h2 className="text-2xl sm:text-3xl mb-2 text-white font-semibold">
-              Create an Account
-            </h2>
-
-            <p className="text-sm text-gray-400">
-              Already have an account?{" "}
-              <Link href="/signin" className="underline text-white">
-                Log in
-              </Link>
-            </p>
-          </div>
-
-          <div className="flex flex-col mt-10 sm:mt-14 gap-4">
-            <InputBox
-              type="text"
-              placeholder="Name"
-              handleChange={(e) => setName(e.target.value)}
-            />
-
-            <InputBox
-              type="text"
-              placeholder="Username"
-              handleChange={(e) => setUsername(e.target.value)}
-            />
-
-            <InputBox
-              type="password"
-              placeholder="Enter Your Password"
-              handleChange={(e) => setPassword(e.target.value)}
-            />
-
-            <InputButton
-              buttonText="Create Account"
-              onSubmit={handleSubmit}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
+      </form>
+    </AuthShell>
   );
 };
 

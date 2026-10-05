@@ -94,7 +94,7 @@ app.post("/signin", async (req: Request, res: Response): Promise<any> => {
     return res.status(403).json({ message: "No User exists" });
   }
 
-  const correctPassword = bcrypt.compare(
+  const correctPassword = await bcrypt.compare(
     parsedData.data.password,
     user.password
   );

@@ -6,7 +6,7 @@ interface buttonProps{
 }
 const LoginButton = ({ onclick , text}: buttonProps) => {
   return (
-    <button onClick={onclick} className='cursor-pointer text-md px-4 py-2 bg-[#1d4ed8] text-white rounded-lg font-semibold'>{text}</button>
+    <button onClick={onclick} className='cursor-pointer text-sm px-4 py-2 bg-white text-black rounded-lg font-medium hover:opacity-90 transition-opacity'>{text}</button>
   )
 }
 

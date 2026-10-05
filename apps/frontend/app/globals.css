@@ -12,3 +12,18 @@
         --tool-fill: 242, 100%, 94%
     }
 }
+
+@theme inline {
+  --color-bg: #0b0b0d;
+  --color-surface: #131316;
+  --color-line: #232328;
+  --color-muted: #8b8b93;
+  --color-accent: #a78bfa;
+  --font-hand: var(--font-patrick-hand);
+}
+
+@layer base {
+  html { background: #0b0b0d; }
+  body { background: #0b0b0d; color: #ededf0; font-family: var(--font-geist-sans), system-ui, sans-serif; }
+  ::selection { background: #a78bfa55; }
+}

@@ -1,71 +1,93 @@
 "use client";
+import AuthShell from "@/components/AuthShell";
 import InputBox from "@/components/InputBox";
 import InputButton from "@/components/InputButton";
+import { parseAuthError } from "@/utils/authError";
 import axios from "axios";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-const Signup = () => {
+const Signin = () => {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const local: Record<string, string> = {};
+    if (!username.trim()) local.username = "Enter your username";
+    else if (username.trim().length < 4) local.username = "Username must be at least 4 characters";
+    if (!password) local.password = "Enter your password";
+    setFields(local);
+    setError("");
+    if (Object.keys(local).length) return;
+
+    setLoading(true);
     try {
       const serverUrl = process.env.NEXT_PUBLIC_HTTP_URL;
       const response = await axios.post(
         `${serverUrl}/signin`,
-        { username, password },
+        { username: username.trim(), password },
         { withCredentials: true }
       );
-      const token = response.data.token;
-      localStorage.setItem("token", token);
+      // The server can reply 200 with an error message and no token.
+      if (!response.data?.token) {
+        setError("Please check your username and password.");
+        setLoading(false);
+        return;
+      }
+      localStorage.setItem("token", response.data.token);
       router.push("/canvas");
-    } catch (error) {
-      console.log("signin failed: " + error);
+    } catch (err) {
+      const parsed = parseAuthError(err, "signin");
+      setError(parsed.message);
+      setFields(parsed.fields);
+      setLoading(false);
     }
   };
 
   return (
-    <div className="w-screen h-screen flex justify-center items-center bg-neutral-300 p-4">
-      <div className="w-full max-w-5xl h-full max-h-[90vh] bg-[hsl(var(--auth-background))] rounded-3xl grid grid-cols-1 md:grid-cols-2 overflow-hidden">
-        <div className="relative hidden md:block">
-          <Image
-            src={"/signup.jpg"}
-            alt="signup-image"
-            fill
-            className="object-cover"
-          />
+    <AuthShell
+      title="Welcome back"
+      subtitle={
+        <>
+          New here?{" "}
+          <Link href="/signup" className="text-white underline underline-offset-4">
+            Create an account
+          </Link>
+        </>
+      }
+      error={error}
+    >
+      <form onSubmit={handleSubmit} noValidate className="space-y-4">
+        <InputBox
+          label="Username"
+          type="text"
+          placeholder="yourname"
+          autoComplete="username"
+          value={username}
+          error={fields.username}
+          handleChange={(e) => setUsername(e.target.value)}
+        />
+        <InputBox
+          label="Password"
+          type="password"
+          placeholder="••••••••"
+          autoComplete="current-password"
+          value={password}
+          error={fields.password}
+          handleChange={(e) => setPassword(e.target.value)}
+        />
+        <div className="pt-2">
+          <InputButton buttonText="Log in" loading={loading} />
         </div>
-        <div className="px-6 md:px-12 py-10 md:py-20 flex flex-col justify-center">
-          <div className="flex flex-col items-center text-center">
-            <h2 className="text-3xl md:text-4xl mb-2 text-white font-semibold">Log In</h2>
-            <p className="text-sm text-gray-300">
-              Don&apos;t have an account?{" "}
-              <Link href={"/signup"} className="underline">
-                Sign up
-              </Link>
-            </p>
-          </div>
-          <div className="flex flex-col mt-10 space-y-4">
-            <InputBox
-              type="text"
-              placeholder="Username"
-              handleChange={(e) => setUsername(e.target.value)}
-            />
-            <InputBox
-              type="password"
-              placeholder="Enter Your Password"
-              handleChange={(e) => setPassword(e.target.value)}
-            />
-            <InputButton buttonText="Log In" onSubmit={handleSubmit} />
-          </div>
-        </div>
-      </div>
-    </div>
+      </form>
+    </AuthShell>
   );
 };
 
-export default Signup;
+export default Signin;
